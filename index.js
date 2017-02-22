@@ -1,128 +1,52 @@
-'use strict';
+process.title = 'weplay-discovery';
 
-const fs = require('fs');
-const join = require('path').join;
 const crypto = require('crypto');
+const uuid = require('node-uuid').v4();
+const logger = require('weplay-common').logger('weplay-discovery', uuid);
 
-const logger = require('weplay-common').logger('weplay-discovery');
+const discoveryPort = process.env.DISCOVERY_PORT || 3010;
+const Discovery = require('weplay-common').Discovery;
 
-
-// redis
-const redis = require('weplay-common').redis();
-const sub = require('weplay-common').redis();
-
-
-var digest = function (state) {
-    var md5 = crypto.createHash('md5');
-    return md5.update(state).digest('hex');
-};
-
-const romsMap = [];
-var defaultRomHash;
-const romPath = join('data', 'rom');
-const romDir = join(process.cwd(), romPath);
-const statePath = join('data', 'state');
-const stateDir = join(process.cwd(), statePath);
-
-logger.info(romDir);
-fs.readdir(romDir, (err, roms) => {
-    if (err) {
-        logger.error(err);
-    }
-    var count = 1;
-    roms.forEach((rom)=> {
-        var name = rom.split('.')[0];
-        if (name) {
-            var romData = fs.readFileSync(join(romDir, rom));
-            var hash = digest(romData).toString();
-            var romInfo = {name: name, path: join(romPath, rom), hash: hash, emu: null};
-            logger.info('loading rom info', romInfo);
-            if (romInfo.name === 'default') {
-                defaultRomHash = hash;
-                logger.info('default loading rom info', romInfo);
-                redis.set('weplay:rom:default', defaultRomHash);
-                redis.set('weplay:rom:0', defaultRomHash);
-            } else {
-                redis.set(`weplay:rom:${count}`, hash);
-            }
-            count++;
-            romsMap.push(romInfo);
-        }
+const discovery = new Discovery().server(discoveryPort, null, ()=> {
+    logger.info('Discovery server listening', {
+        port: discoveryPort,
+        uuid: uuid
     });
 });
 
 
-sub.subscribe('weplay:emu:subscribe');
-sub.on('message', (channel, id) => {
-    if ('weplay:emu:subscribe' != channel) return;
-    id = id.toString();
-    logger.debug('weplay:emu:subscribe', {uuid: id});
+var restify = require('restify');
 
-    var romSelection = romsMap.filter(r=>r.name === 'default' && (r.emu === null || r.emu === id))[0];
-    if (!romSelection)  romSelection = romsMap.filter(r=>r.emu === null || r.emu === id)[0];
-
-    if (romSelection) {
-        //romsMap[romsMap.indexOf(romSelection)].emu = id;
-        romSelection.emu = id;
-        //const romSelection = romsMap['default'];
-        var romHash = romSelection.hash;
-
-        logger.info(`weplay:emu:${id}:rom:hash`, {romHash: romHash});
-        redis.publish(`weplay:emu:${id}:rom:hash`, romHash);
-
-        redis.get(`weplay:state:${romHash}`, (err, state) => {
-            if (err) throw err;
-            if (!state) {
-
-                fs.stat(join(stateDir, `${romHash}.state`), (err, stats) => {
-                    if (stats) {
-                        fs.readFile(join(stateDir, `${romHash}.state`), (err, stateFromFile) => {
-                            if (err) logger.error(err);
-                            if (stateFromFile) {
-                                logger.debug('loading latest state from disk');
-                                redis.set(`weplay:state:${romHash}`, stateFromFile);
-
-                                logger.info(`weplay:emu:${id}:rom:state`);
-                                redis.publish(`weplay:emu:${id}:rom:state`, stateData);
-                            }
-                        });
-                    } else {
-                        fs.readFile(join(process.cwd(), romSelection.path), (err, romData) => {
-                            if (err) {
-                                logger.error(err);
-                            }
-
-                            logger.info(`weplay:emu:${id}:rom:data`, {romHash: romHash});
-                            redis.publish(`weplay:emu:${id}:rom:data`, romData);
-                        });
-                    }
-                });
-            } else {
-                logger.info(`weplay:emu:${id}:rom:state`);
-                redis.publish(`weplay:emu:${id}:rom:state`, state);
-            }
-        });
-
-
-        sub.subscribe(`weplay:state:${romHash}`);
-        sub.on('message', (channel, romPack) => {
-            if (`weplay:state:${romHash}` != channel) return;
-
-            redis.set(`weplay:state:${romHash}`, romPack);
-
-            logger.debug('weplay:state', {romHash: romHash, state: digest(romPack)});
-            var stateName = join('data', 'state', `${romHash}.state`);
-            const file = join(process.cwd(), stateName);
-            fs.writeFile(file, romPack, (err) => {
-                if (err) {
-                    logger.error(err);
-                }
+function lookup(req, res, next) {
+    res.send(discovery.lookup().map(service=> {
+        if (service.events) {
+            const events = service.events.map(e=> {
+                return e.event;
             });
-        });
+            return {name: service.name, id: service.id, version: service.version, events: events};
+        }
+        else {
+            return {name: service.name, id: service.id, version: service.version};
+        }
+    }));
+    next();
+}
 
+var server = restify.createServer({
+    formatters: {
+        'application/json': function (req, res, body, cb) {
+            return cb(null, JSON.stringify(body, null, '\t'));
+        }
     }
-    logger.info('weplay:emu:subscribe:done', {id: id, romsMap: romsMap.filter(r=> r.emu !== null)});
-    redis.publish(`weplay:emu:${id}:subscribe:done`, '');
 });
 
-redis.publish('weplay:discover:init', '');
+server.pre(restify.pre.userAgentConnection());
+
+server.get('/lookup', lookup);
+server.head('/lookup', lookup);
+
+server.listen(8080, function () {
+    logger.info('Restify %s listening at %s', server.name, server.url);
+});
+
+require('weplay-common').cleanup(discovery.destroy.bind(discovery));
