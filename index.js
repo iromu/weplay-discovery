@@ -7,8 +7,8 @@ const logger = require('weplay-common').logger('weplay-discovery', uuid);
 const discoveryPort = process.env.DISCOVERY_PORT || 3010;
 const Discovery = require('weplay-common').Discovery;
 
-const discovery = new Discovery().server(discoveryPort, null, ()=> {
-    logger.info('Discovery server listening', {
+const discovery = new Discovery().server({name: 'My Discovery', port: discoveryPort}, ()=> {
+    logger.info('My Discovery server listening', {
         port: discoveryPort,
         uuid: uuid
     });
@@ -21,13 +21,25 @@ function lookup(req, res, next) {
     res.send(discovery.lookup().map(service=> {
         if (service.events) {
             const events = service.events.map(e=> {
-                return e.event;
+                return (e.room) ? e.event + '#' + e.room : e.event;
             });
-            return {name: service.name, id: service.id, version: service.version, events: events};
+            const streams = service.events.filter(e=>e.room).map(e=> {
+                return e.room;
+            });
+            return {
+                name: service.name,
+                id: service.id,
+                version: service.version,
+                events: events,
+                streams: streams,
+                depends: service.depends
+            };
         }
         else {
             return {name: service.name, id: service.id, version: service.version};
         }
+    }).sort(function (a, b) {
+        return a.name > b.name;
     }));
     next();
 }
