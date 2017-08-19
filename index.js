@@ -1,6 +1,6 @@
 process.title = 'weplay-discovery'
 
-const uuid = require('node-uuid').v4()
+const uuid = require('uuid/v1')()
 const logger = require('weplay-common').logger('weplay-discovery', uuid)
 
 const discoveryPort = process.env.DISCOVERY_PORT || 3010
