@@ -1,26 +1,27 @@
+import {Discovery, LoggerFactory} from 'weplay-common'
+
 process.title = 'weplay-discovery'
 
 const uuid = require('uuid/v1')()
-const logger = require('weplay-common').logger('weplay-discovery', uuid)
+const logger = LoggerFactory.get('weplay-discovery', uuid)
 
 const discoveryPort = process.env.DISCOVERY_PORT || 3010
 const statusPort = process.env.STATUS_PORT || 8088
-const Discovery = require('weplay-common').Discovery
 
-const discovery = new Discovery().server({name: 'discovery', port: discoveryPort, statusPort: statusPort}, () => {
+const discovery = new Discovery().server({name: 'discovery', port: discoveryPort, statusPort}, () => {
   logger.info('My Discovery server listening', {
     port: discoveryPort,
-    uuid: uuid
+    uuid
   })
 })
 
 const discoveryUrl = process.env.DISCOVERY_MASTER_URL
 if (discoveryUrl) {
   const EventBus = require('weplay-common').EventBus
-  var bus = new EventBus({
+  EventBus({
     url: discoveryUrl,
     port: discoveryPort,
-    statusPort: statusPort,
+    statusPort,
     name: 'emu',
     id: this.uuid,
     serverListeners: {
@@ -42,7 +43,7 @@ if (discoveryUrl) {
       {name: 'rom', event: 'state', handler: this.onRomState.bind(this)}]
   }, () => {
     logger.info('Discovery slave connected to discovery server', {
-      discoveryUrl: discoveryUrl,
+      discoveryUrl,
       uuid: this.uuid
     })
   })
