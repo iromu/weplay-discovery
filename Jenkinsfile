@@ -1,6 +1,10 @@
 pipeline {
     agent none
 
+    triggers {
+      upstream(upstreamProjects: "weplay-common/" + env.BRANCH_NAME.replaceAll("/", "%2F"), threshold: hudson.model.Result.SUCCESS)
+    }
+
     stages  {
 
         stage('Initialize') {
