@@ -5,7 +5,7 @@
   "dependencies": {
     "lodash": "^4.17.4",
     "redis": "^2.8.0",
-    "restify": "^5.1.0",
+    "restify": "^6.0.1",
     "uuid": "^3.1.0",
     "weplay-common": "github:iromu/weplay-common#develop"
   },
