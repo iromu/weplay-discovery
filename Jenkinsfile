@@ -44,13 +44,21 @@ pipeline {
          }
        }
 
-       stage('Docker arm'){
-         agent { label 'arm'  }
+        stage('Docker arm'){
+          agent { label 'arm'  }
+          steps {
+              sh 'docker build --no-cache -t iromu/weplay-discovery-arm:latest . -f Dockerfile_arm'
+              sh 'docker push iromu/weplay-discovery-arm:latest'
+          }
+        }
+
+        stage('Docker amd64'){
+         agent { label 'docker'  }
          steps {
-             sh 'docker build --no-cache -t iromu/weplay-discovery-arm:latest . -f Dockerfile_arm'
-             sh 'docker push iromu/weplay-discovery-arm:latest'
+             sh 'docker build --no-cache -t iromu/weplay-discovery:latest . -f Dockerfile'
+             sh 'docker push iromu/weplay-discovery:latest'
          }
-       }
+        }
 
        stage('Cleanup'){
          agent any
